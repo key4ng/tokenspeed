@@ -44,6 +44,7 @@ from tokenspeed.runtime.cache.l3.backend import (
     resolve_l3_weight_version,
 )
 from tokenspeed.runtime.engine.io_struct import (
+    SUPPORTED_WEIGHT_UPDATE_SOURCES,
     DestroyWeightsUpdateGroupReqInput,
     InitWeightsUpdateGroupReqInput,
     PauseMode,
@@ -138,6 +139,29 @@ async def _optional_json_body(request: Request) -> dict[str, Any]:
 PAUSE_MODES: frozenset[str] = frozenset(get_args(PauseMode))
 
 
+def _unsupported_source(source: str) -> JSONResponse | None:
+    """A 501 refusal unless the scheduler implements this weight-update source.
+
+    The scheduler's dispatcher raises ``NotImplementedError`` on a request type
+    it has no branch for, which kills the scheduler process and the engine with
+    it. Refuse here instead of forwarding. ``None`` means the source is
+    supported and the route may run.
+    """
+    if source in SUPPORTED_WEIGHT_UPDATE_SOURCES:
+        return None
+    supported = ", ".join(sorted(SUPPORTED_WEIGHT_UPDATE_SOURCES))
+    return JSONResponse(
+        {
+            "success": False,
+            "message": (
+                f"update_weights_from_{source} is not implemented by this "
+                f"build's scheduler; supported sources: {supported}"
+            ),
+        },
+        status_code=HTTPStatus.NOT_IMPLEMENTED.value,
+    )
+
+
 # --------------------------------------------------------------------------- #
 # Process group setup
 # --------------------------------------------------------------------------- #
@@ -225,6 +249,10 @@ async def update_weights_from_distributed(request: Request) -> JSONResponse:
 
 @router.post("/update_weights_from_tensor")
 async def update_weights_from_tensor(request: Request) -> JSONResponse:
+    refusal = _unsupported_source("tensor")
+    if refusal is not None:
+        return refusal
+
     async def _do() -> dict[str, Any]:
         body = await _json_body(request)
         obj = UpdateWeightsFromTensorReqInput(
@@ -243,6 +271,10 @@ async def update_weights_from_tensor(request: Request) -> JSONResponse:
 
 @router.post("/update_weights_from_disk")
 async def update_weights_from_disk(request: Request) -> JSONResponse:
+    refusal = _unsupported_source("disk")
+    if refusal is not None:
+        return refusal
+
     async def _do() -> dict[str, Any]:
         body = await _json_body(request)
         obj = UpdateWeightFromDiskReqInput(

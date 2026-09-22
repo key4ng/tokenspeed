@@ -8,6 +8,7 @@ import os
 import sys
 import unittest
 from types import SimpleNamespace
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from ci_system.ci_register import register_cuda_ci  # noqa: E402
@@ -17,7 +18,7 @@ register_cuda_ci(est_time=5, suite="runtime-1gpu")
 from fastapi.testclient import TestClient  # noqa: E402
 from runtime.rl_fakes import FakeLLM  # noqa: E402
 
-from tokenspeed.runtime.entrypoints import rl_control  # noqa: E402
+from tokenspeed.runtime.entrypoints import rl_control, sglang_compat_http  # noqa: E402
 from tokenspeed.runtime.entrypoints.sglang_compat_http import (  # noqa: E402
     build_sglang_compat_app,
 )
@@ -54,7 +55,9 @@ class TestControlEndpointHelpers(unittest.TestCase):
     def test_capabilities_match_the_smg_label_contract(self):
         caps = rl_control.capabilities()
         self.assertEqual(caps["rl.pause_modes"], "wait,abort,keep")
-        self.assertEqual(caps["rl.update_from"], "disk,distributed")
+        # Derived from the scheduler's dispatcher, which implements only the
+        # distributed update path; the other two routes answer 501.
+        self.assertEqual(caps["rl.update_from"], "distributed")
         for key in (
             "rl.abort",
             "rl.flush_cache",
@@ -62,6 +65,7 @@ class TestControlEndpointHelpers(unittest.TestCase):
             "rl.reports_weight_version",
         ):
             self.assertEqual(caps[key], "true")
+        self.assertNotIn("disk", caps["rl.update_from"])
         self.assertNotIn("tensor", caps["rl.update_from"])
 
     def test_advertisement_carries_url_and_capabilities(self):
@@ -146,8 +150,8 @@ class TestRouteSemantics(unittest.TestCase):
         for route in (
             "/init_weights_update_group",
             "/update_weights_from_distributed",
-            "/update_weights_from_tensor",
-            "/update_weights_from_disk",
+            # /update_weights_from_{disk,tensor} answer 501 before the body is
+            # read; see TestUnsupportedWeightUpdateSources.
             "/abort_request",
             "/update_weight_version",
         ):
@@ -188,6 +192,83 @@ class TestRouteSemantics(unittest.TestCase):
         _llm, client = self._client()
         self.assertEqual(client.get("/flush_cache").status_code, 200)
         self.assertEqual(client.post("/flush_cache").status_code, 200)
+
+
+class TestUnsupportedWeightUpdateSources(unittest.TestCase):
+    """Sources the scheduler has no branch for never reach it.
+
+    Forwarding one raises ``NotImplementedError`` inside the scheduler process,
+    which dies and takes the control app and the engine with it.
+    """
+
+    def _client(self):
+        llm = FakeLLM()
+        return llm, TestClient(build_sglang_compat_app(llm))
+
+    def test_disk_is_501_and_forwards_nothing(self):
+        llm, client = self._client()
+        resp = client.post(
+            "/update_weights_from_disk",
+            json={"model_path": "/tmp/model", "weight_version": "v9"},
+        )
+        self.assertEqual(resp.status_code, 501)
+        body = resp.json()
+        self.assertFalse(body["success"])
+        self.assertIn("update_weights_from_disk", body["message"])
+        self.assertIn("distributed", body["message"])
+        self.assertEqual(llm.updates, [])
+        self.assertEqual(llm.server_args.weight_version, "default")
+
+    def test_tensor_is_501_and_forwards_nothing(self):
+        llm, client = self._client()
+        resp = client.post(
+            "/update_weights_from_tensor",
+            json={
+                "serialized_named_tensors": [],
+                "load_format": None,
+                "flush_cache": False,
+                "weight_version": "v9",
+            },
+        )
+        self.assertEqual(resp.status_code, 501)
+        body = resp.json()
+        self.assertFalse(body["success"])
+        self.assertIn("update_weights_from_tensor", body["message"])
+        self.assertIn("distributed", body["message"])
+        self.assertEqual(llm.updates, [])
+        self.assertEqual(llm.server_args.weight_version, "default")
+
+    def test_distributed_is_untouched(self):
+        llm, client = self._client()
+        resp = client.post(
+            "/update_weights_from_distributed",
+            json={
+                "names": ["weight"],
+                "dtypes": ["float32"],
+                "shapes": [[1]],
+                "weight_version": "v9",
+            },
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(len(llm.updates), 1)
+
+    def test_guard_follows_the_scheduler_constant(self):
+        # Data-driven, not hard-coded: widen the supported set and the disk
+        # route reaches the engine again.
+        llm, client = self._client()
+        with mock.patch.object(
+            sglang_compat_http,
+            "SUPPORTED_WEIGHT_UPDATE_SOURCES",
+            frozenset({"disk", "distributed"}),
+        ):
+            resp = client.post(
+                "/update_weights_from_disk", json={"model_path": "/tmp/model"}
+            )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(
+            [type(obj).__name__ for obj in llm.updates],
+            ["UpdateWeightFromDiskReqInput"],
+        )
 
 
 if __name__ == "__main__":

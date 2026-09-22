@@ -23,8 +23,9 @@
 The engine advertises where its control app listens and what it can do so a
 fronting gateway (SMG, ``crates/rl``) can drive it without guessing. The
 label keys are SMG's ``rl.*`` capability-override keys; SMG's discovery turns
-every key here into a worker label. Keep this module free of engine imports:
-it is unit-tested without a model.
+every key here into a worker label. The one engine import is the scheduler's
+``SUPPORTED_WEIGHT_UPDATE_SOURCES``, so the advertisement cannot drift from what
+the dispatcher implements; the module still needs no model to import.
 """
 
 from __future__ import annotations
@@ -35,12 +36,13 @@ from typing import Any
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-# Values SMG's static capability table cannot know about this build. Update
-# when a route becomes end to end (``tensor`` joins ``rl.update_from`` once the
-# CUDA-IPC receive path lands; the route already exists but is not wired).
+from tokenspeed.runtime.engine.io_struct import SUPPORTED_WEIGHT_UPDATE_SOURCES
+
+# Values SMG's static capability table cannot know about this build. Update when
+# a route becomes end to end. ``rl.update_from`` is absent here on purpose:
+# :func:`capabilities` derives it from the scheduler's supported-source set.
 _CAPABILITIES: dict[str, str] = {
     "rl.pause_modes": "wait,abort,keep",
-    "rl.update_from": "disk,distributed",
     "rl.abort": "true",
     "rl.flush_cache": "true",
     "rl.sleep_wake": "true",
@@ -65,8 +67,14 @@ def control_url(server_args: Any) -> str | None:
 
 
 def capabilities() -> dict[str, str]:
-    """What this build implements, as SMG ``rl.*`` labels."""
-    return dict(_CAPABILITIES)
+    """What this build implements, as SMG ``rl.*`` labels.
+
+    ``rl.update_from`` follows the scheduler's dispatcher: a source it cannot
+    handle is never advertised, because the control app refuses it with 501.
+    """
+    caps = dict(_CAPABILITIES)
+    caps["rl.update_from"] = ",".join(sorted(SUPPORTED_WEIGHT_UPDATE_SOURCES))
+    return caps
 
 
 def advertisement(server_args: Any) -> dict[str, str]:

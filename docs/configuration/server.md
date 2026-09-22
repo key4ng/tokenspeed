@@ -101,9 +101,14 @@ The following slime paths are not yet supported end to end:
   `--rollout-top-p 1.0` until TokenSpeed returns that metadata;
 - rollout routing replay (`--use-rollout-routing-replay`).
 
-The HTTP route for `update_weights_from_tensor` remains for SGLang clients, but
-TokenSpeed's scheduler does not yet implement its CUDA-IPC receive path. Use the
-distributed update mode until that implementation is added.
+`POST /update_weights_from_disk` and `POST /update_weights_from_tensor` stay on
+the router for SGLang clients, but answer `501 Not Implemented` with
+`{"success": false, "message": "..."}`: TokenSpeed's scheduler implements
+neither the disk load path nor the CUDA-IPC receive path, and forwarding such a
+request would raise inside the scheduler process and take the engine down. Use
+`POST /update_weights_from_distributed` until those paths are added. For the
+same reason the engine advertises `rl.update_from = "distributed"` only, so a
+gateway never routes a disk or tensor update here.
 
 ### Driving TokenSpeed from an external gateway
 
