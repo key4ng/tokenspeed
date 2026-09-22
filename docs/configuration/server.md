@@ -44,6 +44,8 @@ For a compact compatibility table, see
 | `--stream-interval` | Streaming buffer interval in generated tokens. Smaller values stream more frequently. |
 | `--stream-output` | Return generated text as disjoint streaming segments. |
 | `--weight-version` | Initial model-weight version stamped into generation metadata. Defaults to `default`. |
+| `--rl-control-host` | Bind host for the in-engine RL control app. Defaults to `--host`. |
+| `--rl-control-api-key` | Bearer token required on every RL control route. Unset leaves the app open, matching SGLang. |
 
 ### Weight Version Metadata
 
@@ -102,6 +104,18 @@ The following slime paths are not yet supported end to end:
 The HTTP route for `update_weights_from_tensor` remains for SGLang clients, but
 TokenSpeed's scheduler does not yet implement its CUDA-IPC receive path. Use the
 distributed update mode until that implementation is added.
+
+### Driving TokenSpeed from an external gateway
+
+A gateway that fronts several engines (for example SMG with `--enable-rl`)
+reaches this app directly, not through the sidecar. Launch the engine with
+`--rl-control-port <port>` and `--rl-control-host <reachable address>`, and
+set `--rl-control-api-key` unless the network is trusted: an open control app
+on a routable host accepts weight updates from anyone who can connect. The
+engine advertises the resulting URL and its capabilities in server info, so a
+gateway that speaks the gRPC servicer discovers them at registration.
+`POST /pause_generation` accepts `{"mode": "wait"|"abort"|"keep"}` (default
+`wait`), and `/flush_cache` answers on GET and POST as SGLang does.
 
 ## Scheduler And Memory
 

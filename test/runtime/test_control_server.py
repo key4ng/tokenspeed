@@ -20,14 +20,26 @@ sidecar (PR #305):
 
 import asyncio
 import json
+import os
+import sys
 import threading
 import time
 import unittest
 
-import requests
-import uvicorn
-from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
+# CI registration (AST-parsed, runtime no-op).
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from ci_system.ci_register import register_cuda_ci  # noqa: E402
+
+register_cuda_ci(est_time=5, suite="runtime-1gpu")
+
+import requests  # noqa: E402
+import uvicorn  # noqa: E402
+from fastapi import FastAPI, Request  # noqa: E402
+from fastapi.responses import (  # noqa: E402
+    JSONResponse,
+    PlainTextResponse,
+    StreamingResponse,
+)
 
 # Token chunks the streaming mock emits, one SSE event each, with a delay
 # between them so a prematurely-closed upstream session would truncate.
