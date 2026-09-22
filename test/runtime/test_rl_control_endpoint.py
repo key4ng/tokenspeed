@@ -37,7 +37,9 @@ class TestControlEndpointHelpers(unittest.TestCase):
             rl_control.control_url(_args(rl_control_host="10.0.0.5")),
             "http://10.0.0.5:40100",
         )
-        self.assertEqual(rl_control.control_url(_args(host="::1")), "http://[::1]:40100")
+        self.assertEqual(
+            rl_control.control_url(_args(host="::1")), "http://[::1]:40100"
+        )
 
     def test_control_url_is_none_without_a_port(self):
         self.assertIsNone(rl_control.control_url(_args(rl_control_port=None)))
@@ -47,7 +49,12 @@ class TestControlEndpointHelpers(unittest.TestCase):
         caps = rl_control.capabilities()
         self.assertEqual(caps["rl.pause_modes"], "wait,abort,keep")
         self.assertEqual(caps["rl.update_from"], "disk,distributed")
-        for key in ("rl.abort", "rl.flush_cache", "rl.sleep_wake", "rl.reports_weight_version"):
+        for key in (
+            "rl.abort",
+            "rl.flush_cache",
+            "rl.sleep_wake",
+            "rl.reports_weight_version",
+        ):
             self.assertEqual(caps[key], "true")
         self.assertNotIn("tensor", caps["rl.update_from"])
 
@@ -55,7 +62,9 @@ class TestControlEndpointHelpers(unittest.TestCase):
         adv = rl_control.advertisement(_args())
         self.assertEqual(adv["rl.control_url"], "http://127.0.0.1:40100")
         self.assertEqual(adv["rl.abort"], "true")
-        self.assertNotIn("rl.control_url", rl_control.advertisement(_args(rl_control_port=None)))
+        self.assertNotIn(
+            "rl.control_url", rl_control.advertisement(_args(rl_control_port=None))
+        )
 
 
 class TestServerArgsFlags(unittest.TestCase):
@@ -68,7 +77,14 @@ class TestServerArgsFlags(unittest.TestCase):
         self.assertIsNone(ns.rl_control_host)
         self.assertIsNone(ns.rl_control_api_key)
         ns = parser.parse_args(
-            ["--model", "m", "--rl-control-host", "0.0.0.0", "--rl-control-api-key", "k"]
+            [
+                "--model",
+                "m",
+                "--rl-control-host",
+                "0.0.0.0",
+                "--rl-control-api-key",
+                "k",
+            ]
         )
         self.assertEqual(ns.rl_control_host, "0.0.0.0")
         self.assertEqual(ns.rl_control_api_key, "k")
