@@ -14,7 +14,12 @@ from ci_system.ci_register import register_cuda_ci  # noqa: E402
 
 register_cuda_ci(est_time=5, suite="runtime-1gpu")
 
+from fastapi.testclient import TestClient  # noqa: E402
+
 from tokenspeed.runtime.entrypoints import rl_control  # noqa: E402
+from tokenspeed.runtime.entrypoints.sglang_compat_http import (  # noqa: E402
+    build_sglang_compat_app,
+)
 from tokenspeed.runtime.utils.server_args import ServerArgs  # noqa: E402
 
 
@@ -88,6 +93,40 @@ class TestServerArgsFlags(unittest.TestCase):
         )
         self.assertEqual(ns.rl_control_host, "0.0.0.0")
         self.assertEqual(ns.rl_control_api_key, "k")
+
+
+class _AuthLLM:
+    def __init__(self, api_key):
+        self.server_args = SimpleNamespace(
+            weight_version="default",
+            model="m",
+            kvstore_storage_backend=None,
+            rl_control_api_key=api_key,
+        )
+
+
+class TestBearerAuth(unittest.TestCase):
+    def test_open_when_no_key_is_configured(self):
+        client = TestClient(build_sglang_compat_app(_AuthLLM(None)))
+        self.assertEqual(client.get("/get_weight_version").status_code, 200)
+
+    def test_rejects_missing_or_wrong_bearer(self):
+        client = TestClient(build_sglang_compat_app(_AuthLLM("s3cret")))
+        resp = client.get("/get_weight_version")
+        self.assertEqual(resp.status_code, 401)
+        self.assertEqual(resp.json(), {"success": False, "message": "unauthorized"})
+        resp = client.get(
+            "/get_weight_version", headers={"Authorization": "Bearer nope"}
+        )
+        self.assertEqual(resp.status_code, 401)
+
+    def test_accepts_the_configured_bearer(self):
+        client = TestClient(build_sglang_compat_app(_AuthLLM("s3cret")))
+        resp = client.get(
+            "/get_weight_version", headers={"Authorization": "Bearer s3cret"}
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.json(), {"weight_version": "default"})
 
 
 if __name__ == "__main__":

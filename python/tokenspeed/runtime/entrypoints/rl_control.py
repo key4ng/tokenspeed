@@ -29,7 +29,11 @@ it is unit-tested without a model.
 
 from __future__ import annotations
 
+import hmac
 from typing import Any
+
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 
 # Values SMG's static capability table cannot know about this build. Update
 # when a route becomes end to end (``tensor`` joins ``rl.update_from`` once the
@@ -72,3 +76,21 @@ def advertisement(server_args: Any) -> dict[str, str]:
     if url:
         out["rl.control_url"] = url
     return out
+
+
+def install_bearer_auth(app: FastAPI, api_key: str) -> None:
+    """Require ``Authorization: Bearer <api_key>`` on every route of ``app``.
+
+    Constant-time comparison; a miss answers 401 in the same JSON shape the
+    control routes use for every other failure.
+    """
+    expected = f"Bearer {api_key}"
+
+    @app.middleware("http")
+    async def _require_bearer(request: Request, call_next):
+        presented = request.headers.get("authorization", "")
+        if not hmac.compare_digest(presented, expected):
+            return JSONResponse(
+                {"success": False, "message": "unauthorized"}, status_code=401
+            )
+        return await call_next(request)

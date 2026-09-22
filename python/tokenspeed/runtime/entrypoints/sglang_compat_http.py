@@ -51,6 +51,7 @@ from tokenspeed.runtime.engine.io_struct import (
     UpdateWeightsFromDistributedReqInput,
     UpdateWeightsFromTensorReqInput,
 )
+from tokenspeed.runtime.entrypoints.rl_control import install_bearer_auth
 from tokenspeed.runtime.utils import get_colorful_logger
 
 if TYPE_CHECKING:
@@ -419,12 +420,16 @@ async def model_info(request: Request) -> JSONResponse:
 
 
 def build_sglang_compat_app(async_llm: "AsyncLLM") -> FastAPI:
-    """Return a standalone FastAPI app exposing only the SGLang-compat routes.
+    """Return the FastAPI app exposing the SGLang-compatible RL control routes.
 
-    In production these routes are mounted on the shared RL control-plane app
-    (see ``AsyncLLM._serve_rl_control_plane``). This helper is for isolated tests.
+    This is the app ``AsyncLLM._serve_rl_control_plane`` serves in production
+    on ``--rl-control-port``; tests build it the same way. When
+    ``--rl-control-api-key`` is set every route requires that bearer.
     """
     app = FastAPI(title="tokenspeed SGLang-compatible RL control")
     app.state.async_llm = async_llm
+    api_key = getattr(async_llm.server_args, "rl_control_api_key", None)
+    if api_key:
+        install_bearer_auth(app, api_key)
     app.include_router(router)
     return app
