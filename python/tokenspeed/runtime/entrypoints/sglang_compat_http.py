@@ -446,7 +446,8 @@ def build_sglang_compat_app(async_llm: "AsyncLLM") -> FastAPI:
     """
     app = FastAPI(title="tokenspeed SGLang-compatible RL control")
     app.state.async_llm = async_llm
-    api_key = getattr(async_llm.server_args, "rl_control_api_key", None)
+    server_args = getattr(async_llm, "server_args", None)
+    api_key = getattr(server_args, "rl_control_api_key", None)
     if api_key:
         install_bearer_auth(app, api_key)
     app.include_router(router)

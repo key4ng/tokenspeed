@@ -111,6 +111,12 @@ class TestBearerAuth(unittest.TestCase):
         client = TestClient(build_sglang_compat_app(_AuthLLM(None)))
         self.assertEqual(client.get("/get_weight_version").status_code, 200)
 
+    def test_open_when_engine_has_no_server_args(self):
+        # Some engine stand-ins (tests, minimal stubs) carry no server_args at
+        # all; the app must still build and stay open rather than raising.
+        client = TestClient(build_sglang_compat_app(object()))
+        self.assertEqual(client.get("/health_generate").status_code, 200)
+
     def test_rejects_missing_or_wrong_bearer(self):
         client = TestClient(build_sglang_compat_app(_AuthLLM("s3cret")))
         resp = client.get("/get_weight_version")
