@@ -15,6 +15,7 @@ from ci_system.ci_register import register_cuda_ci  # noqa: E402
 register_cuda_ci(est_time=5, suite="runtime-1gpu")
 
 from fastapi.testclient import TestClient  # noqa: E402
+from runtime.rl_fakes import FakeLLM  # noqa: E402
 
 from tokenspeed.runtime.entrypoints import rl_control  # noqa: E402
 from tokenspeed.runtime.entrypoints.sglang_compat_http import (  # noqa: E402
@@ -127,6 +128,60 @@ class TestBearerAuth(unittest.TestCase):
         )
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.json(), {"weight_version": "default"})
+
+
+class TestRouteSemantics(unittest.TestCase):
+    def _client(self):
+        llm = FakeLLM()
+        return llm, TestClient(build_sglang_compat_app(llm))
+
+    def test_empty_body_is_400_on_body_routes(self):
+        _llm, client = self._client()
+        for route in (
+            "/init_weights_update_group",
+            "/update_weights_from_distributed",
+            "/update_weights_from_tensor",
+            "/update_weights_from_disk",
+            "/abort_request",
+            "/update_weight_version",
+        ):
+            resp = client.post(route)
+            self.assertEqual(resp.status_code, 400, route)
+            self.assertFalse(resp.json()["success"], route)
+            resp = client.post(
+                route,
+                content=b"{not json",
+                headers={"content-type": "application/json"},
+            )
+            self.assertEqual(resp.status_code, 400, route)
+
+    def test_pause_mode_is_honored_and_echoed(self):
+        llm, client = self._client()
+        self.assertEqual(client.post("/pause_generation").json()["mode"], "wait")
+        self.assertEqual(
+            client.post("/pause_generation", json={"mode": "keep"}).json()["mode"],
+            "keep",
+        )
+        self.assertEqual(
+            client.post("/pause_generation", json={"mode": "abort"}).status_code, 200
+        )
+        self.assertEqual(
+            [m for kind, m in llm.scheduler_calls if kind == "pause"],
+            ["wait", "keep", "abort"],
+        )
+
+    def test_invalid_pause_mode_is_400_and_reopens_admission(self):
+        llm, client = self._client()
+        resp = client.post("/pause_generation", json={"mode": "retract"})
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("invalid pause mode", resp.json()["message"])
+        self.assertEqual(llm.scheduler_calls, [])
+        self.assertEqual(llm.admission_calls, [])
+
+    def test_flush_cache_accepts_get_and_post(self):
+        _llm, client = self._client()
+        self.assertEqual(client.get("/flush_cache").status_code, 200)
+        self.assertEqual(client.post("/flush_cache").status_code, 200)
 
 
 if __name__ == "__main__":
