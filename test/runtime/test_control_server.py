@@ -16,6 +16,10 @@ sidecar (PR #305):
   4. gRPC errors surfaced as unhandled 500s. They must map to a clean 503.
   5. --control-port must be parsed as an orchestrator flag, not forwarded to
      the engine or gateway.
+  6. /get_server_info returned the engine's nested gRPC shape
+     ({"server_args": {...}, ...}); SGLang's (and slime's external-engine
+     discovery) is flat, so nested server args must also be merged to the
+     top level.
 """
 
 import asyncio
@@ -39,6 +43,14 @@ from fastapi.responses import (  # noqa: E402
     JSONResponse,
     PlainTextResponse,
     StreamingResponse,
+)
+from smg_grpc_proto.generated import tokenspeed_scheduler_pb2 as pb  # noqa: E402
+
+from tokenspeed.runtime.entrypoints import (  # noqa: E402, E501
+    control_server as control_server_mod,
+)
+from tokenspeed.runtime.entrypoints.control_server import (  # noqa: E402
+    sglang_shaped_server_info,
 )
 
 # Token chunks the streaming mock emits, one SSE event each, with a delay
@@ -393,6 +405,93 @@ class TestControlPortArg(unittest.TestCase):
 
         result = split_argv(["--model", "m"])
         self.assertIsNone(result.opts.control_port)
+
+
+class TestSglangShapedServerInfo(unittest.TestCase):
+    """`sglang_shaped_server_info` (bug 6): flatten `server_args` to the top
+    level so slime's external-engine discovery/sanity check (which reads
+    SGLang's flat `/get_server_info` shape, e.g. `info["enable_memory_saver"]`)
+    finds engine flags instead of `None`."""
+
+    def test_server_args_are_flattened_to_top_level(self):
+        info = {
+            "server_args": {
+                "enable_memory_saver": False,
+                "tensor_parallel_size": 1,
+                "rl.control_url": "http://127.0.0.1:31210",
+            },
+            "scheduler_info": {"x": 1},
+            "tokenspeed_version": "1.0",
+        }
+
+        shaped = sglang_shaped_server_info(info)
+
+        self.assertIs(shaped["enable_memory_saver"], False)
+        self.assertEqual(shaped["tensor_parallel_size"], 1)
+        self.assertEqual(shaped["rl.control_url"], "http://127.0.0.1:31210")
+        # Nested key stays, for existing consumers of the old shape.
+        self.assertEqual(shaped["server_args"], info["server_args"])
+        self.assertEqual(shaped["scheduler_info"], {"x": 1})
+        self.assertEqual(shaped["tokenspeed_version"], "1.0")
+
+    def test_missing_server_args_is_returned_unchanged(self):
+        info = {"scheduler_info": {}}
+        self.assertEqual(sglang_shaped_server_info(info), info)
+
+
+class TestGetServerInfoRoute(unittest.TestCase):
+    """`GET /get_server_info` (bug 6): the route must return the SGLang-flat
+    shape end to end, against a real ``GetServerInfoResponse`` proto."""
+
+    PORT = 28340
+
+    def setUp(self):
+        self._original_stub = control_server_mod._stub
+
+    def tearDown(self):
+        control_server_mod._stub = self._original_stub
+
+    def test_get_server_info_route_is_flat(self):
+        fake_resp = pb.GetServerInfoResponse()
+        fake_resp.server_args.update(
+            {
+                "enable_memory_saver": False,
+                "tensor_parallel_size": 1,
+                "rl.control_url": "http://127.0.0.1:31210",
+            }
+        )
+        fake_resp.scheduler_info.update({"x": 1})
+        fake_resp.tokenspeed_version = "1.0"
+
+        class _FakeStub:
+            async def GetServerInfo(self, request):
+                return fake_resp
+
+        control_server_mod._stub = lambda: _FakeStub()
+
+        server = uvicorn.Server(
+            uvicorn.Config(
+                control_server_mod.app,
+                host="127.0.0.1",
+                port=self.PORT,
+                log_level="error",
+            )
+        )
+        t = threading.Thread(target=server.run, daemon=True)
+        t.start()
+        try:
+            assert _wait(self.PORT, "/get_server_info"), "sidecar failed to start"
+            r = requests.get(
+                f"http://127.0.0.1:{self.PORT}/get_server_info", timeout=10
+            )
+            self.assertEqual(r.status_code, 200)
+            body = r.json()
+            self.assertIs(body["enable_memory_saver"], False)
+            self.assertEqual(body["tensor_parallel_size"], 1)
+            self.assertIn("server_args", body)
+            self.assertEqual(body["server_args"]["enable_memory_saver"], False)
+        finally:
+            server.should_exit = True
 
 
 if __name__ == "__main__":

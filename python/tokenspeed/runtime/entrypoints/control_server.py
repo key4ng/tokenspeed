@@ -111,9 +111,38 @@ async def _grpc_call(coro) -> JSONResponse:
     return JSONResponse(MessageToDict(resp, preserving_proto_field_name=True))
 
 
+def sglang_shaped_server_info(info: dict) -> dict:
+    """Reshape a nested ``GetServerInfo`` dict into SGLang's flat shape.
+
+    TokenSpeed's gRPC ``GetServerInfoResponse`` nests engine flags under a
+    ``server_args`` key. SGLang's ``/get_server_info`` — which slime's
+    external-engine discovery and its post-launch sanity check read — is flat:
+    every server arg is a top-level key (e.g. ``info["enable_memory_saver"]``).
+    Merge ``server_args`` into the top level for compatibility, while keeping
+    the nested ``server_args`` key for existing consumers. Top-level fields
+    win over server-arg keys on collision (there are none today). ``info`` is
+    returned unchanged if ``server_args`` is absent or not a dict.
+    """
+    server_args = info.get("server_args")
+    if not isinstance(server_args, dict):
+        return info
+    shaped: dict = dict(server_args)
+    shaped.update({k: v for k, v in info.items() if k != "server_args"})
+    shaped["server_args"] = server_args
+    return shaped
+
+
 @app.get("/get_server_info")
 async def get_server_info():
-    return await _grpc_call(_stub().GetServerInfo(pb.GetServerInfoRequest()))
+    try:
+        resp = await _stub().GetServerInfo(pb.GetServerInfoRequest())
+    except grpc.aio.AioRpcError as exc:
+        return JSONResponse(
+            {"error": "engine unavailable", "detail": exc.details()},
+            status_code=503,
+        )
+    info = MessageToDict(resp, preserving_proto_field_name=True)
+    return JSONResponse(sglang_shaped_server_info(info))
 
 
 @app.get("/get_model_info")
