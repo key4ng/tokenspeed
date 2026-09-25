@@ -45,7 +45,7 @@ For a compact compatibility table, see
 | `--stream-output` | Return generated text as disjoint streaming segments. |
 | `--weight-version` | Initial model-weight version stamped into generation metadata. Defaults to `default`. |
 | `--rl-control-host` | Bind host for the in-engine RL control app. Defaults to `--host`. |
-| `--rl-control-api-key` | Bearer token required on every RL control route. Unset leaves the app open, matching SGLang. |
+| `--rl-control-api-key` | Bearer token required on every RL control route. Unset leaves the app open, which is what slime expects by default. |
 
 ### Weight Version Metadata
 
