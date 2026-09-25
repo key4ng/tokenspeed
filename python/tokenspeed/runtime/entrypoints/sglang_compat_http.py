@@ -470,7 +470,7 @@ async def model_info(request: Request) -> JSONResponse:
 
 
 def build_sglang_compat_app(async_llm: "AsyncLLM") -> FastAPI:
-    """Return the FastAPI app exposing the SGLang-compatible RL control routes.
+    """Return the FastAPI app exposing the RL control routes slime and a fronting gateway drive.
 
     This is the app ``AsyncLLM._serve_rl_control_plane`` serves in production
     on ``--rl-control-port``; tests build it the same way. When

@@ -439,7 +439,7 @@ class TestFlattenServerInfo(unittest.TestCase):
 
 
 class TestGetServerInfoRoute(unittest.TestCase):
-    """`GET /get_server_info` (bug 6): the route must return the SGLang-flat
+    """`GET /get_server_info` (bug 6): the route must return the flattened
     shape end to end, against a real ``GetServerInfoResponse`` proto."""
 
     PORT = 28340

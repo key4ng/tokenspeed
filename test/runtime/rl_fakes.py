@@ -1,4 +1,4 @@
-"""Shared fake ``AsyncLLM`` double for SGLang-compat control-route tests."""
+"""Shared fake ``AsyncLLM`` double for the RL control-route tests."""
 
 from __future__ import annotations
 

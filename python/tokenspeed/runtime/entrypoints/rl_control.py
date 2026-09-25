@@ -18,7 +18,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
-"""Control-endpoint helpers for the in-engine SGLang-compatible RL app.
+"""Control-endpoint helpers for the in-engine RL control app (the HTTP surface slime drives).
 
 The engine advertises where its control app listens and what it can do so a
 fronting gateway (SMG, ``crates/rl``) can drive it without guessing. The

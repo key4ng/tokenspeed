@@ -177,7 +177,7 @@ class ServerArgs:
     # external gateway drives this engine.
     rl_control_host: str | None = None
     # Bearer token the in-engine RL control app requires on every route. None
-    # leaves it open (SGLang's default). Never exported in server info.
+    # leaves it open, which is what slime expects by default. Never exported in server info.
     rl_control_api_key: str | None = None
     # Version identifier for the model weights. Stamped into every generation
     # response's meta_info so RL trainers know which policy version produced each
@@ -2262,7 +2262,7 @@ class ServerArgs:
             type=str,
             default=ServerArgs.rl_control_api_key,
             help="Bearer token required on every RL control-plane route. Unset "
-            "leaves the app open, matching SGLang.",
+            "leaves the app open, which is what slime expects by default.",
         )
         parser.add_argument(
             "--weight-version",
