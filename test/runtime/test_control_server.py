@@ -17,9 +17,9 @@ sidecar (PR #305):
   5. --control-port must be parsed as an orchestrator flag, not forwarded to
      the engine or gateway.
   6. /get_server_info returned the engine's nested gRPC shape
-     ({"server_args": {...}, ...}); SGLang's (and slime's external-engine
-     discovery) is flat, so nested server args must also be merged to the
-     top level.
+     ({"server_args": {...}, ...}); slime's external-engine discovery reads
+     engine flags at the top level, so nested server args must also be
+     merged there.
 """
 
 import asyncio
@@ -50,7 +50,7 @@ from tokenspeed.runtime.entrypoints import (  # noqa: E402, E501
     control_server as control_server_mod,
 )
 from tokenspeed.runtime.entrypoints.control_server import (  # noqa: E402
-    sglang_shaped_server_info,
+    flatten_server_info,
 )
 
 # Token chunks the streaming mock emits, one SSE event each, with a delay
@@ -407,11 +407,10 @@ class TestControlPortArg(unittest.TestCase):
         self.assertIsNone(result.opts.control_port)
 
 
-class TestSglangShapedServerInfo(unittest.TestCase):
-    """`sglang_shaped_server_info` (bug 6): flatten `server_args` to the top
-    level so slime's external-engine discovery/sanity check (which reads
-    SGLang's flat `/get_server_info` shape, e.g. `info["enable_memory_saver"]`)
-    finds engine flags instead of `None`."""
+class TestFlattenServerInfo(unittest.TestCase):
+    """`flatten_server_info` (bug 6): merge `server_args` into the top level so
+    slime's external-engine discovery finds engine flags where it looks
+    (e.g. `info["enable_memory_saver"]`), keeping the nested key too."""
 
     def test_server_args_are_flattened_to_top_level(self):
         info = {
@@ -424,7 +423,7 @@ class TestSglangShapedServerInfo(unittest.TestCase):
             "tokenspeed_version": "1.0",
         }
 
-        shaped = sglang_shaped_server_info(info)
+        shaped = flatten_server_info(info)
 
         self.assertIs(shaped["enable_memory_saver"], False)
         self.assertEqual(shaped["tensor_parallel_size"], 1)
@@ -436,7 +435,7 @@ class TestSglangShapedServerInfo(unittest.TestCase):
 
     def test_missing_server_args_is_returned_unchanged(self):
         info = {"scheduler_info": {}}
-        self.assertEqual(sglang_shaped_server_info(info), info)
+        self.assertEqual(flatten_server_info(info), info)
 
 
 class TestGetServerInfoRoute(unittest.TestCase):

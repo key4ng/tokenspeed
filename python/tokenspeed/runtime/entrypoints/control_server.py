@@ -111,17 +111,17 @@ async def _grpc_call(coro) -> JSONResponse:
     return JSONResponse(MessageToDict(resp, preserving_proto_field_name=True))
 
 
-def sglang_shaped_server_info(info: dict) -> dict:
-    """Reshape a nested ``GetServerInfo`` dict into SGLang's flat shape.
+def flatten_server_info(info: dict) -> dict:
+    """Merge the nested ``server_args`` of a ``GetServerInfo`` dict into the top level.
 
     TokenSpeed's gRPC ``GetServerInfoResponse`` nests engine flags under a
-    ``server_args`` key. SGLang's ``/get_server_info`` — which slime's
-    external-engine discovery and its post-launch sanity check read — is flat:
-    every server arg is a top-level key (e.g. ``info["enable_memory_saver"]``).
-    Merge ``server_args`` into the top level for compatibility, while keeping
-    the nested ``server_args`` key for existing consumers. Top-level fields
-    win over server-arg keys on collision (there are none today). ``info`` is
-    returned unchanged if ``server_args`` is absent or not a dict.
+    ``server_args`` key. RL trainers read ``/get_server_info`` flat: slime's
+    external-engine discovery and its post-launch sanity check look up engine
+    flags as top-level keys (e.g. ``info["enable_memory_saver"]``) and abort
+    when one is missing. Copy ``server_args`` to the top level for them while
+    keeping the nested ``server_args`` key for existing consumers. Top-level
+    fields win over server-arg keys on collision (there are none today).
+    ``info`` is returned unchanged if ``server_args`` is absent or not a dict.
     """
     server_args = info.get("server_args")
     if not isinstance(server_args, dict):
@@ -142,7 +142,7 @@ async def get_server_info():
             status_code=503,
         )
     info = MessageToDict(resp, preserving_proto_field_name=True)
-    return JSONResponse(sglang_shaped_server_info(info))
+    return JSONResponse(flatten_server_info(info))
 
 
 @app.get("/get_model_info")
