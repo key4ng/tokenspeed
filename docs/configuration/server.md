@@ -102,7 +102,7 @@ The following slime paths are not yet supported end to end:
 - rollout routing replay (`--use-rollout-routing-replay`).
 
 `POST /update_weights_from_disk` and `POST /update_weights_from_tensor` stay on
-the router for SGLang clients, but answer `501 Not Implemented` with
+the router for slime-compatible clients, but answer `501 Not Implemented` with
 `{"success": false, "message": "..."}`: TokenSpeed's scheduler implements
 neither the disk load path nor the CUDA-IPC receive path, and forwarding such a
 request would raise inside the scheduler process and take the engine down. Use
@@ -113,14 +113,17 @@ gateway never routes a disk or tensor update here.
 ### Driving TokenSpeed from an external gateway
 
 A gateway that fronts several engines (for example SMG with `--enable-rl`)
-reaches this app directly, not through the sidecar. Launch the engine with
-`--rl-control-port <port>` and `--rl-control-host <reachable address>`, and
-set `--rl-control-api-key` unless the network is trusted: an open control app
-on a routable host accepts weight updates from anyone who can connect. The
-engine advertises the resulting URL and its capabilities in server info, so a
-gateway that speaks the gRPC servicer discovers them at registration.
+talks to this control app directly; the `ts serve` sidecar is not involved.
+Launch the engine with `--rl-control-port <port>` and
+`--rl-control-host <address the gateway can reach>` (the default binds
+localhost only), and set `--rl-control-api-key` unless the network is trusted:
+an open control app on a routable host accepts weight updates from anyone who
+can connect. The engine puts the resulting control URL and its capabilities
+(`rl.control_url`, `rl.pause_modes`, `rl.update_from`, ...) into its server
+info, and SMG reads them when it registers the gRPC worker, so nothing has to
+be configured on the gateway side. The routes keep slime's expectations:
 `POST /pause_generation` accepts `{"mode": "wait"|"abort"|"keep"}` (default
-`wait`), and `/flush_cache` answers on GET and POST as SGLang does.
+`wait`), and `/flush_cache` answers on both GET and POST.
 
 ## Scheduler And Memory
 
