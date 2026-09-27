@@ -129,11 +129,10 @@ async def _json_body(request: Request) -> dict[str, Any]:
 
 
 async def _optional_json_body(request: Request) -> dict[str, Any]:
-    """Like :func:`_json_body`, but an absent or malformed body is ``{}``."""
-    try:
-        return await _json_body(request)
-    except ValueError:
+    """Accept an absent body; reject malformed or non-object JSON."""
+    if not await request.body():
         return {}
+    return await _json_body(request)
 
 
 PAUSE_MODES: frozenset[str] = frozenset(get_args(PauseMode))
@@ -478,8 +477,7 @@ def build_sglang_compat_app(async_llm: "AsyncLLM") -> FastAPI:
     """
     app = FastAPI(title="tokenspeed SGLang-compatible RL control")
     app.state.async_llm = async_llm
-    server_args = getattr(async_llm, "server_args", None)
-    api_key = getattr(server_args, "rl_control_api_key", None)
+    api_key = async_llm.server_args.rl_control_api_key
     if api_key:
         install_bearer_auth(app, api_key)
     app.include_router(router)

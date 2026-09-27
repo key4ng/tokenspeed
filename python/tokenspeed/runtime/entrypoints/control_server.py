@@ -121,11 +121,13 @@ def flatten_server_info(info: dict) -> dict:
     when one is missing. Copy ``server_args`` to the top level for them while
     keeping the nested ``server_args`` key for existing consumers. Top-level
     fields win over server-arg keys on collision (there are none today).
-    ``info`` is returned unchanged if ``server_args`` is absent or not a dict.
+    The control API key is omitted from both shapes.
     """
+    info = {k: v for k, v in info.items() if k != "rl_control_api_key"}
     server_args = info.get("server_args")
     if not isinstance(server_args, dict):
         return info
+    server_args = {k: v for k, v in server_args.items() if k != "rl_control_api_key"}
     shaped: dict = dict(server_args)
     shaped.update({k: v for k, v in info.items() if k != "server_args"})
     shaped["server_args"] = server_args

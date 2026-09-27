@@ -31,12 +31,15 @@ the dispatcher implements; the module still needs no model to import.
 from __future__ import annotations
 
 import hmac
-from typing import Any
+from typing import TYPE_CHECKING
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from tokenspeed.runtime.engine.io_struct import SUPPORTED_WEIGHT_UPDATE_SOURCES
+
+if TYPE_CHECKING:
+    from tokenspeed.runtime.utils.server_args import ServerArgs
 
 # Values SMG's static capability table cannot know about this build. Update when
 # a route becomes end to end. ``rl.update_from`` is absent here on purpose:
@@ -50,17 +53,19 @@ _CAPABILITIES: dict[str, str] = {
 }
 
 
-def control_bind_host(server_args: Any) -> str:
+def control_bind_host(server_args: ServerArgs) -> str:
     """Host the control app binds: ``--rl-control-host``, else ``--host``."""
-    return getattr(server_args, "rl_control_host", None) or server_args.host
+    return server_args.rl_control_host or server_args.host
 
 
-def control_url(server_args: Any) -> str | None:
+def control_url(server_args: ServerArgs) -> str | None:
     """Base URL of the control app, or ``None`` when ``--rl-control-port`` is unset."""
-    port = getattr(server_args, "rl_control_port", None)
+    port = server_args.rl_control_port
     if not port:
         return None
     host = control_bind_host(server_args)
+    if host in {"0.0.0.0", "::", "[::]"}:
+        return None
     if ":" in host and not host.startswith("["):
         host = f"[{host}]"
     return f"http://{host}:{int(port)}"
@@ -77,7 +82,7 @@ def capabilities() -> dict[str, str]:
     return caps
 
 
-def advertisement(server_args: Any) -> dict[str, str]:
+def advertisement(server_args: ServerArgs) -> dict[str, str]:
     """Everything the gRPC servicer merges into ``GetServerInfo.server_args``."""
     out = capabilities()
     url = control_url(server_args)
@@ -92,12 +97,12 @@ def install_bearer_auth(app: FastAPI, api_key: str) -> None:
     Constant-time comparison; a miss answers 401 in the same JSON shape the
     control routes use for every other failure.
     """
-    expected = f"Bearer {api_key}"
+    expected = f"Bearer {api_key}".encode("utf-8")
 
     @app.middleware("http")
     async def _require_bearer(request: Request, call_next):
         presented = request.headers.get("authorization", "")
-        if not hmac.compare_digest(presented, expected):
+        if not hmac.compare_digest(presented.encode("utf-8"), expected):
             return JSONResponse(
                 {"success": False, "message": "unauthorized"}, status_code=401
             )

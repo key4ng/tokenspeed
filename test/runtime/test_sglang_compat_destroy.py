@@ -11,6 +11,7 @@ These run CPU-only against a stub AsyncLLM -- no engine, NCCL, or GPU needed.
 import os
 import sys
 import unittest
+from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
@@ -32,6 +33,7 @@ class _StubLLM:
     """Minimal stand-in for AsyncLLM that records the destroy call."""
 
     def __init__(self, result):
+        self.server_args = SimpleNamespace(rl_control_api_key=None)
         self._result = result
         self.calls = []
 

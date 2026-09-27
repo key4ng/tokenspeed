@@ -48,6 +48,14 @@ class TestControlEndpointHelpers(unittest.TestCase):
             rl_control.control_url(_args(host="::1")), "http://[::1]:40100"
         )
 
+    def test_control_url_does_not_advertise_wildcard_addresses(self):
+        for host in ("0.0.0.0", "::", "[::]"):
+            with self.subTest(host=host):
+                args = _args(rl_control_host=host)
+                self.assertEqual(rl_control.control_bind_host(args), host)
+                self.assertIsNone(rl_control.control_url(args))
+                self.assertNotIn("rl.control_url", rl_control.advertisement(args))
+
     def test_control_url_is_none_without_a_port(self):
         self.assertIsNone(rl_control.control_url(_args(rl_control_port=None)))
         self.assertIsNone(rl_control.control_url(_args(rl_control_port=0)))
@@ -100,6 +108,29 @@ class TestServerArgsFlags(unittest.TestCase):
         self.assertEqual(ns.rl_control_api_key, "k")
 
 
+class TestServerInfoSecrets(unittest.TestCase):
+    def test_engine_server_info_omits_control_api_key(self):
+        from dataclasses import dataclass
+
+        from tokenspeed.runtime.entrypoints.engine import Engine
+
+        @dataclass
+        class Args:
+            host: str = "localhost"
+            rl_control_api_key: str = "test-secret"
+
+        engine = SimpleNamespace(
+            tokenizer_manager=SimpleNamespace(
+                server_args=Args(), get_internal_state=lambda: []
+            ),
+            llm=SimpleNamespace(run=lambda result: result),
+            scheduler_info={},
+        )
+        info = Engine.get_server_info(engine)
+        self.assertNotIn("rl_control_api_key", info)
+        self.assertEqual(info["host"], "localhost")
+
+
 class _AuthLLM:
     def __init__(self, api_key):
         self.server_args = SimpleNamespace(
@@ -115,12 +146,6 @@ class TestBearerAuth(unittest.TestCase):
         client = TestClient(build_sglang_compat_app(_AuthLLM(None)))
         self.assertEqual(client.get("/get_weight_version").status_code, 200)
 
-    def test_open_when_engine_has_no_server_args(self):
-        # Some engine stand-ins (tests, minimal stubs) carry no server_args at
-        # all; the app must still build and stay open rather than raising.
-        client = TestClient(build_sglang_compat_app(object()))
-        self.assertEqual(client.get("/health_generate").status_code, 200)
-
     def test_rejects_missing_or_wrong_bearer(self):
         client = TestClient(build_sglang_compat_app(_AuthLLM("s3cret")))
         resp = client.get("/get_weight_version")
@@ -130,6 +155,13 @@ class TestBearerAuth(unittest.TestCase):
             "/get_weight_version", headers={"Authorization": "Bearer nope"}
         )
         self.assertEqual(resp.status_code, 401)
+
+    def test_non_ascii_bearer_is_unauthorized(self):
+        client = TestClient(build_sglang_compat_app(_AuthLLM("s3cret")))
+        response = client.get(
+            "/get_weight_version", headers={b"Authorization": b"Bearer \xff"}
+        )
+        self.assertEqual(response.status_code, 401)
 
     def test_accepts_the_configured_bearer(self):
         client = TestClient(build_sglang_compat_app(_AuthLLM("s3cret")))
@@ -164,6 +196,22 @@ class TestRouteSemantics(unittest.TestCase):
                 headers={"content-type": "application/json"},
             )
             self.assertEqual(resp.status_code, 400, route)
+
+    def test_malformed_optional_body_has_no_side_effects(self):
+        llm, client = self._client()
+        for route in (
+            "/pause_generation",
+            "/release_memory_occupation",
+            "/resume_memory_occupation",
+            "/destroy_weights_update_group",
+        ):
+            for body in (b"{invalid", b"[]", b"null", b'"keep"'):
+                with self.subTest(route=route, body=body):
+                    response = client.post(route, content=body)
+                    self.assertEqual(response.status_code, 400)
+        self.assertEqual(llm.scheduler_calls, [])
+        self.assertEqual(llm.admission_calls, [])
+        self.assertEqual(llm.memory_calls, [])
 
     def test_pause_mode_is_honored_and_echoed(self):
         llm, client = self._client()

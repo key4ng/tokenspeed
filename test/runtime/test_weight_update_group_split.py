@@ -29,10 +29,17 @@ are exercised here with fakes instead of a real process group.
 
 from __future__ import annotations
 
+import os
+import sys
 from types import SimpleNamespace
 
 import pytest
 import torch
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from ci_system.ci_register import register_cuda_ci  # noqa: E402
+
+register_cuda_ci(est_time=5, suite="runtime-1gpu")
 
 from tokenspeed.runtime.execution.weight_update_group import (
     _assert_not_split,
@@ -108,3 +115,63 @@ def test_assert_not_split_passes_when_backend_unavailable():
     fake_pg = SimpleNamespace(_get_backend=_raise_no_backend)
 
     _assert_not_split(fake_pg, torch.device("cuda", 0))  # no raise
+
+
+def test_rejected_group_is_destroyed_before_retry(monkeypatch):
+    from tokenspeed.runtime.execution.model_runner import ModelRunner
+
+    c10d = torch.distributed.distributed_c10d
+    rank_maps = {}
+    registered = set()
+    split_backend = SimpleNamespace(options=SimpleNamespace(split_from=object()))
+
+    # Use an identity-hashable group, like torch's ProcessGroup.
+    class Group:
+        def _get_backend(self, device):
+            return split_backend
+
+    pg = Group()
+    store = SimpleNamespace(set_timeout=lambda timeout: None)
+    runner = SimpleNamespace(
+        global_rank=0, gpu_id=0, _weight_update_pg=None, _weight_update_device=None
+    )
+    request = SimpleNamespace(
+        rank_offset=1,
+        world_size=2,
+        group_name="test-group",
+        backend="nccl",
+        master_address="localhost",
+        master_port=12345,
+    )
+
+    def create_group(*args, group_name, **kwargs):
+        assert group_name not in registered
+        registered.add(group_name)
+        return pg, None
+
+    def destroy_group(group):
+        assert group is pg
+        assert rank_maps.pop(group) == {0: 0, 1: 1}
+        registered.remove(request.group_name)
+
+    monkeypatch.setattr(torch.cuda, "set_device", lambda device: None)
+    monkeypatch.setattr(torch.distributed, "is_initialized", lambda: False)
+    monkeypatch.setattr(
+        c10d, "rendezvous", lambda *args, **kwargs: iter([(store, 1, 2)])
+    )
+    monkeypatch.setattr(c10d, "PrefixStore", lambda name, store: store)
+    monkeypatch.setattr(c10d, "_world", SimpleNamespace(pg_group_ranks=rank_maps))
+    monkeypatch.setattr(c10d, "_new_process_group_helper", create_group)
+    monkeypatch.setattr(torch.distributed, "destroy_process_group", destroy_group)
+
+    ok, message = ModelRunner.init_weights_update_group(runner, request)
+    assert not ok
+    assert "split" in message
+    assert not registered
+    assert not rank_maps
+    assert runner._weight_update_pg is None
+
+    split_backend.options.split_from = None
+    ok, _ = ModelRunner.init_weights_update_group(runner, request)
+    assert ok
+    assert runner._weight_update_pg is pg

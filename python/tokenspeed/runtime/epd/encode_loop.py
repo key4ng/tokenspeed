@@ -284,8 +284,8 @@ def run_encode_loop(server_args, port_args, pipe_writer, gpu_id, global_rank):
             # loop down on a missing attribute; drop it and say so instead.
             if not isinstance(request, EncodeRequest):
                 logger.warning(
-                    "encode loop ignoring unsupported scheduler message %s",
-                    type(request).__name__,
+                    f"encode loop ignoring unsupported scheduler message "
+                    f"{type(request).__name__}",
                 )
                 continue
             worker.submit(request)

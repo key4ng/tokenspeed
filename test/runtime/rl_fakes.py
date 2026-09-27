@@ -8,6 +8,7 @@ from types import SimpleNamespace
 class FakeLLM:
     def __init__(self) -> None:
         self.server_args = SimpleNamespace(
+            rl_control_api_key=None,
             weight_version="default",
             model="model-x",
             kvstore_storage_backend=None,
@@ -39,7 +40,7 @@ class FakeLLM:
     def allow_generation_admission(self):
         self.admission_calls.append("allow")
 
-    async def pause_scheduler(self, *, mode="abort"):
+    async def pause_scheduler(self, *, mode):
         self.scheduler_calls.append(("pause", mode))
         return True
 

@@ -327,8 +327,10 @@ class Engine(EngineBase):
 
     def get_server_info(self):
         internal_states = self.llm.run(self.tokenizer_manager.get_internal_state())
+        server_args = dataclasses.asdict(self.tokenizer_manager.server_args)
+        server_args.pop("rl_control_api_key", None)
         return {
-            **dataclasses.asdict(self.tokenizer_manager.server_args),
+            **server_args,
             **self.scheduler_info,
             "internal_states": internal_states,
             "version": __version__,
@@ -518,6 +520,23 @@ def _set_envs_and_config(server_args: ServerArgs):
         # explicit env wins; --disable-tf32 is the documented opt-out.
         os.environ.setdefault("NVIDIA_TF32_OVERRIDE", "1")
         os.environ.setdefault("TORCH_ALLOW_TF32_CUBLAS_OVERRIDE", "1")
+    if server_args.numerics == "rl-bitwise":
+        # Bitwise envelope: no TF32 anywhere, and pin NCCL to one
+        # algorithm/protocol so the reduction association order cannot switch
+        # with message size. The envelope's promise beats ambient
+        # environment: a conflicting value is replaced, loudly, instead of
+        # silently voiding the contract.
+        for key, value in (
+            ("NVIDIA_TF32_OVERRIDE", "0"),
+            ("NCCL_ALGO", "Ring"),
+            ("NCCL_PROTO", "Simple"),
+        ):
+            prior = os.environ.get(key)
+            if prior is not None and prior != value:
+                logger.warning(
+                    f"--numerics rl-bitwise replaces {key}={prior} with {value}"
+                )
+            os.environ[key] = value
 
     _set_socket_interface(server_args)
 

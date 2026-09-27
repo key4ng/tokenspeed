@@ -433,6 +433,16 @@ class TestFlattenServerInfo(unittest.TestCase):
         self.assertEqual(shaped["scheduler_info"], {"x": 1})
         self.assertEqual(shaped["tokenspeed_version"], "1.0")
 
+    def test_control_api_key_is_not_returned(self):
+        info = {
+            "server_args": {"rl_control_api_key": "test-secret", "host": "localhost"},
+            "rl_control_api_key": "test-secret",
+        }
+        shaped = flatten_server_info(info)
+        self.assertNotIn("rl_control_api_key", shaped)
+        self.assertNotIn("rl_control_api_key", shaped["server_args"])
+        self.assertEqual(info["server_args"]["rl_control_api_key"], "test-secret")
+
     def test_missing_server_args_is_returned_unchanged(self):
         info = {"scheduler_info": {}}
         self.assertEqual(flatten_server_info(info), info)

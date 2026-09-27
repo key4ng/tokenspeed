@@ -297,8 +297,12 @@ class ModelRunner:
                     **{opt: None},
                     timeout=timeout,
                 )
-            _assert_not_split(pg, device)
             _world.pg_group_ranks[pg] = {i: i for i in range(world_size)}
+            try:
+                _assert_not_split(pg, device)
+            except RuntimeError:
+                torch.distributed.destroy_process_group(pg)
+                raise
 
             self._weight_update_pg = pg
             self._weight_update_device = device
