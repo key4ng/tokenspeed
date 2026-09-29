@@ -181,8 +181,10 @@ def _load_builtin_generators() -> None:
         prepare_kpool_prefill_write,
     )
     from tokenspeed_kernel.benchmark.generators.gemm import (
+        prepare_decode_gemv,
         prepare_dense_bmm,
-        prepare_mxfp8_mm,
+        prepare_linear_attnres_partials,
+        prepare_mm,
     )
     from tokenspeed_kernel.benchmark.generators.kda import (
         prepare_kda_paged_decode,
@@ -234,7 +236,11 @@ def _load_builtin_generators() -> None:
     )
     _BENCHMARK_GENERATORS.setdefault(("attention", "mla_prefill"), prepare_mla_prefill)
     _BENCHMARK_GENERATORS.setdefault(("gemm", "bmm"), prepare_dense_bmm)
-    _BENCHMARK_GENERATORS.setdefault(("gemm", "mm"), prepare_mxfp8_mm)
+    _BENCHMARK_GENERATORS.setdefault(("gemm", "mm"), prepare_mm)
+    _BENCHMARK_GENERATORS.setdefault(("gemm", "decode_gemv"), prepare_decode_gemv)
+    _BENCHMARK_GENERATORS.setdefault(
+        ("gemm", "linear_attnres_partials"), prepare_linear_attnres_partials
+    )
     _BENCHMARK_GENERATORS.setdefault(
         ("moe", "sigmoid_bias_topk"), prepare_sigmoid_bias_topk
     )
