@@ -41,7 +41,7 @@ from ci_system.ci_register import register_cuda_ci  # noqa: E402
 
 register_cuda_ci(est_time=5, suite="runtime-1gpu")
 
-from tokenspeed.runtime.execution.weight_update_group import (
+from tokenspeed.runtime.execution.weight_update_group import (  # noqa: E402
     _assert_not_split,
     _no_default_group_split,
 )
