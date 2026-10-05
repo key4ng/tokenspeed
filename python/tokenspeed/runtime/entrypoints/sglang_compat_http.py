@@ -144,10 +144,11 @@ PAUSE_MODES: frozenset[str] = frozenset(get_args(PauseMode))
 def _unsupported_source(source: str) -> JSONResponse | None:
     """A 501 refusal unless the scheduler implements this weight-update source.
 
-    The scheduler's dispatcher raises ``NotImplementedError`` on a request type
-    it has no branch for, which kills the scheduler process and the engine with
-    it. Refuse here instead of forwarding. ``None`` means the source is
-    supported and the route may run.
+    The scheduler answers a disk or tensor load with ``success=false`` rather
+    than loading anything; refusing here keeps the request off the scheduler
+    entirely and lets a client tell "not implemented" (501) from a load that
+    failed (400). The same set is advertised to gateways as ``rl.update_from``.
+    ``None`` means the source is supported and the route may run.
     """
     if source in SUPPORTED_WEIGHT_UPDATE_SOURCES:
         return None
@@ -262,9 +263,9 @@ async def update_weights_from_mooncake(request: Request) -> JSONResponse:
     namespace unless one is given, and with L3 storage a new
     ``weight_version`` requires ``flush_cache``.
     """
-    body = await request.json()
 
     async def _do() -> dict[str, Any]:
+        body = await _json_body(request)
         version = body.get("version")
         if version is None:
             raise ValueError("Missing 'version' in request body")

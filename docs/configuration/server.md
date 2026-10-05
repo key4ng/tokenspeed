@@ -212,8 +212,8 @@ TokenSpeed's scheduler implements neither the disk load path nor the CUDA-IPC
 receive path and would answer such a request with `success=false` ("not
 supported on this engine"). Use `POST /update_weights_from_distributed` or the
 Mooncake update described below. For the same reason the engine advertises
-`rl.update_from = "distributed"` only, so a gateway never routes a disk or
-tensor update here.
+`rl.update_from = "distributed,mooncake"`, so a gateway never routes a disk
+or tensor update here.
 
 ### Weight Updates Under Attention DP
 

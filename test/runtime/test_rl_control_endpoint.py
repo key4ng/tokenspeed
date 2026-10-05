@@ -63,9 +63,9 @@ class TestControlEndpointHelpers(unittest.TestCase):
     def test_capabilities_match_the_smg_label_contract(self):
         caps = rl_control.capabilities()
         self.assertEqual(caps["rl.pause_modes"], "wait,abort,keep")
-        # Derived from the scheduler's dispatcher, which implements only the
-        # distributed update path; the other two routes answer 501.
-        self.assertEqual(caps["rl.update_from"], "distributed")
+        # Derived from the scheduler's dispatcher, which implements the
+        # distributed and Mooncake load paths; disk and tensor answer 501.
+        self.assertEqual(caps["rl.update_from"], "distributed,mooncake")
         for key in (
             "rl.abort",
             "rl.flush_cache",
@@ -182,6 +182,7 @@ class TestRouteSemantics(unittest.TestCase):
         for route in (
             "/init_weights_update_group",
             "/update_weights_from_distributed",
+            "/update_weights_from_mooncake",
             # /update_weights_from_{disk,tensor} answer 501 before the body is
             # read; see TestUnsupportedWeightUpdateSources.
             "/abort_request",

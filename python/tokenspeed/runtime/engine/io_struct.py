@@ -905,7 +905,7 @@ class IsSchedulerPausedReqOutput(BaseReq, kw_only=True):
 # isinstance chain in the control-request handler). The in-engine RL control app
 # refuses the others up front instead of forwarding a request the scheduler
 # cannot handle, and advertises this set to gateways as `rl.update_from`.
-SUPPORTED_WEIGHT_UPDATE_SOURCES: frozenset[str] = frozenset({"distributed"})
+SUPPORTED_WEIGHT_UPDATE_SOURCES: frozenset[str] = frozenset({"distributed", "mooncake"})
 
 
 class UpdateWeightFromDiskReqInput(BaseReq, kw_only=True):
